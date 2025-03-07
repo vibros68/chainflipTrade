@@ -1,0 +1,27 @@
+{
+  "name": "chainfliptrade",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "dex exchange",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibros68/chainflipTrade.git"
+  },
+  "keywords": [
+    "trade"
+  ],
+  "author": "vibros68",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vibros68/chainflipTrade/issues"
+  },
+  "homepage": "https://github.com/vibros68/chainflipTrade#readme",
+  "dependencies": {
+    "@chainflip/sdk": "^1.7.0",
+    "@trpc/server": "^10.45.2"
+  }
+}
