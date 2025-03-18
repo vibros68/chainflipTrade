@@ -6,23 +6,35 @@ const t = new Trading({
     isTest: true,
     from: {
         symbol: "BTC",
-        chain: "Bitcoin"
+        chain: "Bitcoin",
+        cfg: {
+            host: "localhost",
+            rpcUser: "root",
+            rpcPass: "123456",
+            passphrase: "123456"
+        }
     },
+    // to: {
+    //     symbol: "SOL",
+    //     chain: "Solana"
+    // },
     to: {
-        symbol: "SOL",
-        chain: "Solana"
+        symbol: "ETH",
+        chain: "Ethereum",
+        cfg: {}
     },
     order: {
-        min: 0.0005,
-        max: 0.0015,
-        destAddress: "4YmwKrCiW836uXhRcm7A8BC9b77K55gBKfPj2coFxK8m",
+        min: 0.002,
+        max: 0.005,
+        //destAddress: "4YmwKrCiW836uXhRcm7A8BC9b77K55gBKfPj2coFxK8m", // SOL
+        destAddress: "0xCC5E1Ee0B2792634D2Ec0C98e490C144d96A7B24", // ETH
         refundAddress: "tb1qkcpk6zyh626f6zgsx5mzxtnfyyj4j986nla9f4"
     }
 })
 await t.init()
 let command = "run"
 let params = []
-if (process.argv === 2) {
+if (process.argv.length === 2) {
     command = "run"
 } else {
     command = process.argv[2]

@@ -27,16 +27,21 @@ export class Bitcoind {
         }
         return ""
     }
-    // sendToAddress will send an amount in shatoshi to the destination address
+    // sendToAddress will send an amount in satoshi to the destination address
     async sendToAddress(address, amount, comment, commentTo) {
         const fAmount = amount / 10**8
-        const data = await this.#do("sendtoaddress", [address, fAmount, comment, commentTo])
+        const {result, error} = await this.#do("sendtoaddress", [address, fAmount, comment, commentTo])
+        return result
     }
     async getBalance(label) {
         if (!label) {
             label = "*"
         }
         const { result } = await this.#do("getbalance", [label, 1])
+        return result
+    }
+    async getAddress() {
+        const { result } = await this.#do("getnewaddress", [])
         return result
     }
     async #do(method, params) {
