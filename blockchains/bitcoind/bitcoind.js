@@ -1,9 +1,11 @@
 import axios from "axios"
-export class Bitcoind {
+import {WalletInterface} from "../interface.js"
+export class Bitcoind extends WalletInterface {
     #config = null
     #path = ""
     #api = null
-    constructor({isTest, host, account, passphrase, rpcUser, rpcPass}) {
+    constructor(isTest,{host, account, passphrase, rpcUser, rpcPass}) {
+        super();
         this.#config = {isTest, host, account, passphrase, rpcUser, rpcPass}
         if (isTest) {
             this.#path = `http://${host}:18332/`
@@ -43,6 +45,13 @@ export class Bitcoind {
     async getAddress() {
         const { result } = await this.#do("getnewaddress", [])
         return result
+    }
+    async transactionInfo(txId) {
+        const { result } = await this.#do("gettransaction", [txId])
+        const {amount,fee, confirmations, blockhash, blockheight, time, txid, details} = result
+        return {
+            amount,fee, confirmations, blockhash, blockheight, time: time*1000, txid
+        }
     }
     async #do(method, params) {
         const { data } = await this.#api.post(this.#walletPath(),{

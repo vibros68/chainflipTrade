@@ -1,4 +1,8 @@
-export class Geth {
+import {WalletInterface} from "../interface.js";
+export class Geth extends WalletInterface {
+    constructor(isTest, path) {
+        super();
+    }
     async sendToAddress(address, amount, comment, commentTo) {
         return ""
     }

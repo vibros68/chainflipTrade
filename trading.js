@@ -1,18 +1,25 @@
 import { SwapSDK } from "@chainflip/sdk/swap";
 import {newWallet} from "./blockchains/wallets.js";
+import {WalletInterface} from "./blockchains/interface.js";
 
 export class Trading {
     swapSDK = null;
     assets = [];
     from = {};
     to = {};
+    /** @type {WalletInterface} */
     fromWallet = null;
+    /** @type {WalletInterface} */
     toWallet = null;
     order = {}
     isTest = false
     constructor({isTest, from, to, order}) {
+        let network = "perseverance"
+        if (!isTest) {
+            network = ""
+        }
         const swapConfig = {
-            network: "perseverance", // Testnet
+            network, // Testnet
             //backendUrl: "https://chainflip-swap-perseverance.chainflip.io",
             //signer: Wallet.fromPhrase(process.env.WALLET_MNEMONIC_PHRASE),
             // broker: {
@@ -105,12 +112,26 @@ export class Trading {
             process.stdout.write(".")
         }
         process.stdout.write("\n")
-        // Fetch swap status
-        const status = await this.swapSDK.getStatusV2({
-            id: depositChannelId,
-        });
+        const txId = await this.fromWallet.sendToAddress(depositAddress, amount)
+        while (true) {
+            // wait for 10 seconds
+            await new Promise(resolver => {
+                setTimeout(resolver,10000)
+            })
+            let {confirmations} = await this.fromWallet.transactionInfo(txId)
+            confirmations = +confirmations
+            console.log(`tx: ${txId} got ${confirmations} confirmations`)
+            if (confirmations && confirmations >=6) {
+                break
+            }
+        }
 
-        console.log('status', status.state);
+        // Fetch swap status
+        // const status = await this.swapSDK.getStatusV2({
+        //     id: depositChannelId,
+        // });
+        //
+        // console.log('status', status.state);
     }
     assetConfig({symbol,chain}) {
         for (let asset of this.assets) {
