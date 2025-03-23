@@ -21,9 +21,13 @@ export class WalletInterface {
         throw new Error("Method 'getAddress()' must be implemented");
     }
 
+    async transactionInfo() {
+        throw new Error("Method 'transactionInfo()' must be implemented");
+    }
+
     // Ensure all required methods are implemented
     ensureImplements() {
-        const requiredMethods = ['getBalance', 'getAddress'];
+        const requiredMethods = ['getBalance', 'getAddress', 'sendToAddress', 'transactionInfo'];
         requiredMethods.forEach(method => {
             if (typeof this[method] !== 'function') {
                 throw new Error(`Method '${method}' must be implemented`);

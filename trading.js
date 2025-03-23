@@ -1,8 +1,10 @@
 import { SwapSDK } from "@chainflip/sdk/swap";
 import {newWallet} from "./blockchains/wallets.js";
 import {WalletInterface} from "./blockchains/interface.js";
+import {waitFor} from "./helper/helper.js";
 
 export class Trading {
+    /** @type {SwapSDK} */
     swapSDK = null;
     assets = [];
     from = {};
@@ -37,11 +39,11 @@ export class Trading {
         this.assets = await this.swapSDK.getAssets();
         const {symbol: fromSymbol, chain: fromChain, cfg: fromCfg} = this.from
         fromCfg.isTest = this.isTest
-        this.fromWallet = newWallet({symbol: fromSymbol, chain: fromChain, cfg: fromCfg});
+        this.fromWallet = await newWallet({symbol: fromSymbol, chain: fromChain, cfg: fromCfg});
         const {symbol: toSymbol, chain: toChain, cfg: toCfg} = this.to
         toCfg.isTest = this.isTest
         fromCfg.isTest = this.isTest
-        this.toWallet = newWallet({symbol: toSymbol, chain: toChain, cfg: toCfg})
+        this.toWallet = await newWallet({symbol: toSymbol, chain: toChain, cfg: toCfg})
     }
     async run() {
         await this.makeOrder()
@@ -53,7 +55,8 @@ export class Trading {
         const {
             state,  srcAsset, srcChain, destAsset, destChain, fees, destAddress,
             srcChainRequiredBlockConfirmations,
-            depositChannel, lastStatechainUpdateAt, estimatedDurationSeconds
+            depositChannel, lastStatechainUpdateAt, estimatedDurationSeconds,
+            swap, swapEgress
         } = orderStatus
         console.log(`Order[${depositChannel.id}] - status[${state}]. From[${srcAsset}/${srcChain}] - To[${destAsset}/${destChain}]`)
         console.log(`Destination address: ${destAddress}`)
@@ -105,33 +108,63 @@ export class Trading {
         console.log('Deposit address: ', depositAddress);
         console.log('Deposit Channel Id: ', depositChannelId)
         process.stdout.write(`Start sending coin: ${fAmount} \$${fromAsset.symbol} `)
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolver => {
-                setTimeout(resolver,1000)
-            })
-            process.stdout.write(".")
-        }
+        await waitFor(10,true)
         process.stdout.write("\n")
-        const txId = await this.fromWallet.sendToAddress(depositAddress, amount)
+        const sendTxId = await this.fromWallet.sendToAddress(depositAddress, amount)
         while (true) {
             // wait for 10 seconds
-            await new Promise(resolver => {
-                setTimeout(resolver,10000)
-            })
-            let {confirmations} = await this.fromWallet.transactionInfo(txId)
+            await waitFor(10)
+            let {confirmations} = await this.fromWallet.transactionInfo(sendTxId)
             confirmations = +confirmations
-            console.log(`tx: ${txId} got ${confirmations} confirmations`)
+            console.log(`tx: ${sendTxId} got ${confirmations} confirmations`)
             if (confirmations && confirmations >=6) {
                 break
             }
         }
-
-        // Fetch swap status
-        // const status = await this.swapSDK.getStatusV2({
-        //     id: depositChannelId,
-        // });
-        //
-        // console.log('status', status.state);
+        const receiveTxId = await this.waitForOrderComplete(depositChannelId)
+        if (receiveTxId === null) {
+            return
+        }
+        process.stdout.write(`checking tx: ${receiveTxId}`)
+        while (true) {
+            let {confirmations} = await this.fromWallet.transactionInfo(receiveTxId)
+            confirmations = +confirmations
+            process.stdout.write(` got ${confirmations} confirmations`)
+            if (confirmations && confirmations >=6) {
+                break
+            }
+            await waitFor(10,true)
+        }
+    }
+    async waitForOrderComplete(depositChannelId) {
+        console.log(`waiting for order completed: ${depositChannelId}`)
+        const startAt = new Date();
+        while (true) {
+            process.stdout.write(`checking ${depositChannelId}: `)
+            const orderStatus = await this.swapSDK.getStatusV2({
+                id: depositChannelId,
+            });
+            const {
+                state,  srcAsset, srcChain, destAsset, destChain, fees, destAddress,
+                srcChainRequiredBlockConfirmations,
+                depositChannel, lastStatechainUpdateAt, estimatedDurationSeconds,
+                swap, swapEgress
+            } = orderStatus
+            if (state === "COMPLETED") {
+                console.log(`status: ${state}. got txId: ${swapEgress.txRef}`)
+                return swapEgress.txRef
+            } else {
+                process.stdout.write(`status: ${state} `)
+                const waited = new Date().getTime() - startAt.getTime()
+                // waited more than 1 hour
+                if (waited > 3600000){
+                    process.stdout.write("\n")
+                    console.log("waited more than 1 hour. stop checking. the order supposes to be failed")
+                    return null
+                }
+                await waitFor(10,true)
+            }
+        }
     }
     assetConfig({symbol,chain}) {
         for (let asset of this.assets) {

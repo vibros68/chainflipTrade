@@ -10,6 +10,9 @@ export class Solana extends WalletInterface {
      */
     constructor(isTest, keypair) {
         super();
+        if (!(keypair instanceof Keypair)) {
+            throw new Error('keypair must be an instance of Keypair');
+        }
         this.keypair = keypair
         let url = "https://api.devnet.solana.com"
         if (!isTest) {
@@ -29,11 +32,46 @@ export class Solana extends WalletInterface {
         return balanceInLamports / LAMPORTS_PER_SOL;
     }
 
+    async transactionInfo(txId) {
+        const tx = await this.#connection.getParsedTransaction(txId, {
+            commitment: 'confirmed', // Can use 'finalized' for maximum assurance
+            maxSupportedTransactionVersion: 0, // Supports legacy transactions
+        });
+
+        if (!tx) {
+            console.log(`Transaction ${txId} not found or still processing`);
+            return {
+                status: 'Failed',
+                confirmations: 0
+            };
+        }
+
+        // Extract key details
+        const { slot, blockTime, meta, transaction } = tx;
+        const latestSlot = await this.#connection.getSlot('confirmed');
+        const slotDifference = latestSlot - slot;
+        const isConfirmed = meta.err === null; // No error means success
+
+        // Parse transfer details (assuming a simple SOL transfer)
+        const instruction = transaction.message.instructions[0];
+        const amountInSOL = instruction.parsed?.info?.lamports / LAMPORTS_PER_SOL;
+
+        return {
+            status: isConfirmed ? 'Success' : 'Failed',
+            blockHeight: slot,
+            confirmations: slotDifference,
+            time: blockTime,
+            fee: meta.fee / LAMPORTS_PER_SOL,
+            amount: amountInSOL || null,
+            txId
+        };
+    }
+
     async sendToAddress(address, amount, comment, commentTo) {
         // Convert recipient public key string to PublicKey object
         const recipientPublicKey = new PublicKey(address);
         // Convert SOL amount to lamports
-        const lamports = BigInt(Math.floor(amount * LAMPORTS_PER_SOL));
+        const lamports = amount//BigInt(Math.floor(amount * LAMPORTS_PER_SOL));
 
         // Create a transaction
         const transaction = new Transaction().add(

@@ -23,6 +23,7 @@
   "dependencies": {
     "@chainflip/sdk": "^1.7.0",
     "@solana/web3.js": "1",
-    "@trpc/server": "^10.45.2"
+    "@trpc/server": "^10.45.2",
+    "ethers": "^6.13.5"
   }
 }

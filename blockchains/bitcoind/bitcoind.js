@@ -50,7 +50,7 @@ export class Bitcoind extends WalletInterface {
         const { result } = await this.#do("gettransaction", [txId])
         const {amount,fee, confirmations, blockhash, blockheight, time, txid, details} = result
         return {
-            amount,fee, confirmations, blockhash, blockheight, time: time*1000, txid
+            amount,fee, confirmations, blockHash: blockhash, blockHeight:blockheight, time: time*1000, txId: txid
         }
     }
     async #do(method, params) {
