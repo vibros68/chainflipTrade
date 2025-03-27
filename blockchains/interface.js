@@ -1,5 +1,6 @@
 // Abstract class acting as an interface
 export class WalletInterface {
+    network = {}
     constructor() {
         if (this.constructor === WalletInterface) {
             throw new Error("Cannot instantiate abstract class");

@@ -1,40 +1,13 @@
-import { SwapSDK } from "@chainflip/sdk/swap";
-//import { Wallet } from "ethers";
+import fs from "fs/promises";
 import { Trading } from "./trading.js";
+import YAML from "yaml"
 
-const t = new Trading({
-    isTest: true,
-    // from: {
-    //     symbol: "BTC",
-    //     chain: "Bitcoin",
-    //     cfg: {
-    //         host: "localhost",
-    //         rpcUser: "root",
-    //         rpcPass: "123456",
-    //         passphrase: "123456"
-    //     }
-    // },
-    from: {
-        symbol: "SOL",
-        chain: "Solana",
-        cfg: {
-            path: ".local/sol02.json"
-        }
-    },
-    to: {
-        symbol: "ETH",
-        chain: "Ethereum",
-        cfg: {}
-    },
-    order: {
-        min: 5,
-        max: 10,
-        //destAddress: "4YmwKrCiW836uXhRcm7A8BC9b77K55gBKfPj2coFxK8m", // SOL
-        destAddress: "0xCC5E1Ee0B2792634D2Ec0C98e490C144d96A7B24", // ETH
-        refundAddress: "tb1qkcpk6zyh626f6zgsx5mzxtnfyyj4j986nla9f4"
-    }
-})
-await t.init()
+const configData = await fs.readFile("config.yaml", { encoding: 'utf8' })
+const {isTest, wallets, order} = YAML.parse(configData)
+
+/** @type {Trading} */
+const t = await Trading.fromConfig(isTest, wallets[order.from], wallets[order.to], order)
+
 let command = "run"
 let params = []
 if (process.argv.length === 2) {
@@ -55,6 +28,10 @@ switch (command) {
         const tx = await t.waitForOrderComplete(params[1])
         console.log(tx)
         break
+    case "available-currency":
+        await t.supportedCoins()
+        break
     default:
         console.log("invalid command")
 }
+process.exit()

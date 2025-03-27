@@ -4,8 +4,10 @@ export class Bitcoind extends WalletInterface {
     #config = null
     #path = ""
     #api = null
-    constructor(isTest,{host, account, passphrase, rpcUser, rpcPass}) {
+    network = {}
+    constructor(network,isTest,{host, account, passphrase, rpcUser, rpcPass}) {
         super();
+        this.network = network
         this.#config = {isTest, host, account, passphrase, rpcUser, rpcPass}
         if (isTest) {
             this.#path = `http://${host}:18332/`

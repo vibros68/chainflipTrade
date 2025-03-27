@@ -1,0 +1,35 @@
+isTest: true
+order:
+  # from and to point to wallets configs
+  from: "solana1"
+  to: "eth1"
+  min: 5
+  max: 10
+wallets:
+  btc1:
+    network:
+      # Bitcoin only accepts BTC
+      symbol: "BTC"
+      chain: "Bitcoin"
+    wallet:
+      # config point to bitcoind wallet
+      host: "localhost"
+      rpcUser: "root"
+      rpcPass: "123456"
+      passphrase: "123456"
+  solana1:
+    network:
+      symbol: "SOL"
+      chain: "Solana"
+    wallet:
+      # private key file created by "solana-keygen new"
+      path: "path_to_your_private_key_file.json"
+  eth1:
+    network:
+      symbol: "ETH"
+      chain: "Ethereum"
+    wallet:
+      # keystore created by "geth account" command. usually stored in $HOME/.ethereum/keystore/
+      path: "path_to_your_keystore_file"
+      # password when you created keystore file
+      password: "your_keystore_password"

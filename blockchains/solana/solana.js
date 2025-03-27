@@ -2,14 +2,17 @@ import fs from "fs/promises";
 import { Connection, PublicKey, Keypair, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {WalletInterface} from "../interface.js";
 export class Solana extends WalletInterface {
+    network = {}
     /** @type {Connection} */
     #connection = null;
     /**
+     * @param network
      * @param isTest
      * @param {Keypair} keypair - The wallet's keypair
      */
-    constructor(isTest, keypair) {
+    constructor(network,isTest, keypair) {
         super();
+        this.network = network
         if (!(keypair instanceof Keypair)) {
             throw new Error('keypair must be an instance of Keypair');
         }
@@ -20,12 +23,12 @@ export class Solana extends WalletInterface {
         }
         this.#connection = new Connection(url);
     }
-    static async fromFilePath (isTest, path) {
+    static async fromFilePath (network,isTest, path) {
         let data = await fs.readFile(path, { encoding: 'utf8' })
         const walletData = JSON.parse(data);
         const keypairArray = Uint8Array.from(walletData);
         const keypair = Keypair.fromSecretKey(keypairArray);
-        return new Solana(isTest, keypair)
+        return new Solana(network,isTest, keypair)
     }
     async getBalance() {
         const balanceInLamports = await this.#connection.getBalance(this.keypair.publicKey);

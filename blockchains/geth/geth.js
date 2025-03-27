@@ -1,23 +1,36 @@
 import {WalletInterface} from "../interface.js";
 import {ethers} from "ethers";
 import fs from "fs/promises";
-import {Keypair, LAMPORTS_PER_SOL} from "@solana/web3.js";
 export class Geth extends WalletInterface {
+    network = {}
     #connect = null
     /** @type {ethers.Wallet} */
     #wallet = null
     /**
+     * @param {Object} network
      * @param isTest
      * @param {ethers.Wallet} wallet - The wallet's keypair
      */
-    constructor(isTest, wallet) {
+    constructor(network,isTest, wallet) {
         super();
+        this.network = network
         let providerUrl = "https://eth-sepolia.g.alchemy.com/v2/WWQPK0icDlSTIPxj5sIa9_0lMlYdru6E"
+        if (!isTest) {
+            providerUrl = "https://eth-mainnet.g.alchemy.com/v2/WWQPK0icDlSTIPxj5sIa9_0lMlYdru6E"
+        }
         this.#connect = new ethers.JsonRpcProvider(providerUrl);
         this.#wallet = wallet.connect(this.#connect)
     }
     async sendToAddress(address, amount, comment, commentTo) {
-        return ""
+        if (!ethers.isAddress(address)) throw new Error('Invalid recipient address');
+
+        const tx = await this.#wallet.sendTransaction({
+            to: address,
+            value: ethers.parseEther(amount),
+        });
+
+        await tx.wait(); // Wait for 1 confirmation
+        return tx.hash;
     }
     async getBalance(label) {
         const balanceWei = await this.#connect.getBalance(this.#wallet.address);
@@ -60,9 +73,9 @@ export class Geth extends WalletInterface {
             txId
         };
     }
-    static async fromFilePath (isTest, filePath, password) {
+    static async fromFilePath (network, isTest, filePath, password) {
         const keystoreJson = await fs.readFile(filePath, 'utf8');
         const wallet = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-        return new Geth(isTest, wallet)
+        return new Geth(network,isTest, wallet)
     }
 }
