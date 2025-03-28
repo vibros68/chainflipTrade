@@ -3,6 +3,30 @@ import {ethers} from "ethers";
 import fs from "fs/promises";
 export class Geth extends WalletInterface {
     network = {}
+    #mainToken = {
+        symbol: "ETH",
+        decimals: 18,
+    }
+    #contractToken = {
+        USDC: {
+            symbol: "USDC",
+            decimals: 6,
+            mainnetContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            testnetContract: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+        },
+        FLIP: {
+            symbol: "FLIP",
+            decimals: 18,
+            mainnetContract: "0x826180541412D574cf1336d22c0C0a287822678A",
+            testnetContract: "0xdC27c60956cB065D19F08bb69a707E37b36d8086"
+        },
+        USDT: {
+            symbol: "USDT",
+            decimals: 6,
+            mainnetContract: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            testnetContract: "0x27CEA6Eb8a21Aae05Eb29C91c5CA10592892F584"
+        }
+    }
     #connect = null
     /** @type {ethers.Wallet} */
     #wallet = null
@@ -21,7 +45,7 @@ export class Geth extends WalletInterface {
         this.#connect = new ethers.JsonRpcProvider(providerUrl);
         this.#wallet = wallet.connect(this.#connect)
     }
-    async sendToAddress(address, amount, comment, commentTo) {
+    async sendToAddress(symbol, address, amount, comment, commentTo) {
         if (!ethers.isAddress(address)) throw new Error('Invalid recipient address');
 
         const tx = await this.#wallet.sendTransaction({

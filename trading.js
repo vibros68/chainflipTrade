@@ -2,6 +2,7 @@ import { SwapSDK } from "@chainflip/sdk/swap";
 import {newWallet} from "./blockchains/wallets.js";
 import {WalletInterface} from "./blockchains/interface.js";
 import {waitFor} from "./helper/helper.js";
+import {Binance} from "./helper/binance.js";
 
 export class Trading {
     /** @type {SwapSDK} */
@@ -13,6 +14,7 @@ export class Trading {
     #toWallet = null;
     #order = {}
     #isTest = false
+    #binance = new Binance()
     /**
      * @param {Boolean} isTest
      * @param {WalletInterface} fromWallet - The wallet's keypair
@@ -25,13 +27,7 @@ export class Trading {
             network = "mainnet"
         }
         const swapConfig = {
-            network, // Testnet
-            //backendUrl: "https://chainflip-swap-perseverance.chainflip.io",
-            //signer: Wallet.fromPhrase(process.env.WALLET_MNEMONIC_PHRASE),
-            // broker: {
-            //     url: 'https://testnet-broker.chainflip.io',
-            //     commissionBps: 0, // basis points, i.e. 100 = 1%
-            // },
+            network,
         };
         this.#isTest = isTest
         this.#swapSDK = new SwapSDK(swapConfig);
@@ -49,7 +45,15 @@ export class Trading {
     }
     async run() {
         this.#assets = await this.#swapSDK.getAssets();
-        await this.makeOrder()
+        while (true) {
+            const orderId = await this.makeOrder()
+            if (!orderId) {
+                await waitFor(60*60)
+            } else {
+                await waitFor(4*60*60)
+            }
+        }
+
     }
     async supportedCoins() {
         const assets = await this.#swapSDK.getAssets();
@@ -105,16 +109,23 @@ export class Trading {
             srcAsset: fromAsset.symbol,
             destAsset: toAsset.symbol,
             amount: amount.toString(),
-            // brokerCommissionBps: 100, // 100 basis point = 1%
-            // affiliateBrokers: [
-            //     { account: "cFM8kRvLBXagj6ZXvrt7wCM4jGmHvb5842jTtXXg3mRHjrvKy", commissionBps: 50 }
-            // ],
         };
         const { quotes } = await this.#swapSDK.getQuoteV2(quoteRequest)
         const quote = quotes.find((quote) => quote.type === 'REGULAR');
         let receiveAmount = +quote.egressAmount
         let fReceiveAmount = receiveAmount / (10**toAsset.decimals)
+        const binanceRate = this.#binance.getPrice({
+            from: fromAsset.symbol,
+            to: toAsset.symbol
+        })
+        const maxRate = binanceRate * (1+this.#order.maxDiffPrice)
         console.log(`Receive ${fReceiveAmount} \$${toAsset.symbol} with rate: ${quote.estimatedPrice}`)
+        if (quote.estimatedPrice > maxRate) {
+            console.log(`The rate is higher than max rate: ${maxRate} . Stop!`)
+            return
+        } else {
+            console.log(`The rate is lower than max rate: ${maxRate} !`)
+        }
         const refundAddress = await this.#fromWallet.getAddress()
         const destAddress = await this.#toWallet.getAddress()
         console.log("refundAddress: ", refundAddress)
@@ -139,7 +150,7 @@ export class Trading {
         process.stdout.write(`Start sending coin: ${fAmount} \$${fromAsset.symbol} `)
         await waitFor(10,true)
         process.stdout.write("\n")
-        const sendTxId = await this.#fromWallet.sendToAddress(depositAddress, amount)
+        const sendTxId = await this.#fromWallet.sendToAddress(fromAsset.symbol,depositAddress, amount)
         while (true) {
             // wait for 10 seconds
             await waitFor(10)
@@ -160,7 +171,7 @@ export class Trading {
             confirmations = +confirmations
             process.stdout.write(` got ${confirmations} confirmations`)
             if (confirmations && confirmations >=6) {
-                break
+                return depositChannelId
             }
             await waitFor(10,true)
         }

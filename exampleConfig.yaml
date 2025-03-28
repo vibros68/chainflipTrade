@@ -3,8 +3,11 @@ order:
   # from and to point to wallets configs
   from: "solana1"
   to: "eth1"
+  # min placed order will take an amount between min and max
   min: 5
   max: 10
+  # maxDiffPrice is the max different rate between chainflip and binance rate. 0.1 = 10%
+  maxDiffPrice: 0.1
 wallets:
   btc1:
     network:

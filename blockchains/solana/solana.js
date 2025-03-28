@@ -2,6 +2,18 @@ import fs from "fs/promises";
 import { Connection, PublicKey, Keypair, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {WalletInterface} from "../interface.js";
 export class Solana extends WalletInterface {
+    #mainToken = {
+        symbol: "SOL",
+        decimals: 9,
+    }
+    #contractToken = {
+        USDC: {
+            symbol: "USDC",
+            decimals: 6,
+            mainnetContract: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            devnetContract: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        }
+    }
     network = {}
     /** @type {Connection} */
     #connection = null;
@@ -70,7 +82,13 @@ export class Solana extends WalletInterface {
         };
     }
 
-    async sendToAddress(address, amount, comment, commentTo) {
+    async sendToAddress(symbol, address, amount, comment, commentTo) {
+        if (symbol.toUpperCase() === "SOL") {
+            return await this.sendSolToAddress(address, amount, comment, commentTo)
+        }
+    }
+
+    async sendSolToAddress(address, amount, comment, commentTo) {
         // Convert recipient public key string to PublicKey object
         const recipientPublicKey = new PublicKey(address);
         // Convert SOL amount to lamports

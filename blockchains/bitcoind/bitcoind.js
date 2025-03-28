@@ -32,7 +32,10 @@ export class Bitcoind extends WalletInterface {
         return ""
     }
     // sendToAddress will send an amount in satoshi to the destination address
-    async sendToAddress(address, amount, comment, commentTo) {
+    async sendToAddress(symbol, address, amount, comment, commentTo) {
+        if (symbol !== "BTC") {
+            throw new Error(`Bitcoin only support BTC`)
+        }
         const fAmount = amount / 10**8
         const {result, error} = await this.#do("sendtoaddress", [address, fAmount, comment, commentTo])
         return result

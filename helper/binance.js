@@ -5,19 +5,36 @@ export class Binance {
     constructor() {
     }
 
-    // Fetch current price of a trading pair (e.g., BTCUSDT)
-    async getPrice(symbol) {
-        try {
-            const response = await axios.get(`${this.#baseUrl}ticker/price`, {
-                params: { symbol: symbol.toUpperCase() },
-            });
-            console.log(response.data)
-            const { symbol: pair, price } = response.data;
+    async #tiker(symbol) {
+        const response = await axios.get(`${this.#baseUrl}ticker/price`, {
+            params: { symbol: symbol.toUpperCase() },
+        });
+        const { price } = response.data;
+        console.log(price)
+        return +price
+    }
 
-            return { pair, price: +price, timestamp: new Date().toISOString() };
+    // Fetch current price of a trading pair (e.g., BTCUSDT)
+    async getPrice({from,to}) {
+        from = from.toUpperCase()
+        to = to.toUpperCase()
+        const symbol = from+to
+        try {
+            if (from === "USDT") {
+                if (to === "USDT") {
+                    return 1
+                }
+                let price = await this.#tiker(to+from)
+                return 1/ +price
+            }
+            if (to === "USDT") {
+                return await this.#tiker(from+to)
+            }
+            const fromTicker = await this.#tiker(from+"USDT")
+            const toTicker = await this.#tiker(to+"USDT")
+            return fromTicker/toTicker
         } catch (error) {
-            console.error('Error fetching price:', error.message);
-            throw error;
+            throw new Error(`Error fetching price for ${symbol}: ${error.message}`);
         }
     }
 
