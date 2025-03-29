@@ -10,7 +10,6 @@ export class Binance {
             params: { symbol: symbol.toUpperCase() },
         });
         const { price } = response.data;
-        console.log(price)
         return +price
     }
 

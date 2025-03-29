@@ -94,37 +94,39 @@ export class Trading {
         console.log(`Order[${depositChannel.id}] - status[${state}]. From[${srcAsset}/${srcChain}] - To[${destAsset}/${destChain}]`)
         console.log(`Destination address: ${destAddress}`)
         console.log(`Required confirms: ${srcChainRequiredBlockConfirmations}. Estimate duration seconds: ${estimatedDurationSeconds}`)
-        console.log(orderStatus)
     }
     async makeOrder() {
         let fAmount = Math.random() * (this.#order.max - this.#order.min) + this.#order.min;
-        let fromAsset = this.assetConfig(this.#fromWallet.network)
-        let toAsset = this.assetConfig(this.#toWallet.network)
+        let fromAsset = this.assetConfig(this.#order.fromSymbol, this.#fromWallet.network.chain)
+        let toAsset = this.assetConfig(this.#order.toSymbol, this.#toWallet.network.chain)
         let amount = Math.floor(fAmount*(10**fromAsset.decimals))
         fAmount = amount / (10**fromAsset.decimals)
         console.log(`making an order with amount: ${fAmount} \$${fromAsset.symbol}`)
         const quoteRequest = {
             srcChain: fromAsset.chain,
             destChain: toAsset.chain,
-            srcAsset: fromAsset.symbol,
-            destAsset: toAsset.symbol,
+            srcAsset: this.#order.fromSymbol,
+            destAsset: this.#order.toSymbol,
             amount: amount.toString(),
         };
         const { quotes } = await this.#swapSDK.getQuoteV2(quoteRequest)
         const quote = quotes.find((quote) => quote.type === 'REGULAR');
         let receiveAmount = +quote.egressAmount
         let fReceiveAmount = receiveAmount / (10**toAsset.decimals)
-        const binanceRate = this.#binance.getPrice({
-            from: fromAsset.symbol,
-            to: toAsset.symbol
+        const binanceRate = await this.#binance.getPrice({
+            from: this.#order.fromSymbol,
+            to: this.#order.toSymbol
         })
-        const maxRate = binanceRate * (1+this.#order.maxDiffPrice)
-        console.log(`Receive ${fReceiveAmount} \$${toAsset.symbol} with rate: ${quote.estimatedPrice}`)
-        if (quote.estimatedPrice > maxRate) {
-            console.log(`The rate is higher than max rate: ${maxRate} . Stop!`)
-            return
-        } else {
-            console.log(`The rate is lower than max rate: ${maxRate} !`)
+        const maxDiffRate = +this.#order.maxDiffPrice
+        console.log(`Receive ${fReceiveAmount} \$${this.#order.toSymbol} with rate: ${quote.estimatedPrice}`)
+        if (maxDiffRate) {
+            const minRate = binanceRate * (1-this.#order.maxDiffPrice)
+            if (quote.estimatedPrice < minRate) {
+                console.log(`The rate is lower than min rate: ${minRate} . Stop!`)
+                return
+            } else {
+                console.log(`The rate is higher than min rate: ${minRate} !`)
+            }
         }
         const refundAddress = await this.#fromWallet.getAddress()
         const destAddress = await this.#toWallet.getAddress()
@@ -147,10 +149,10 @@ export class Trading {
         const { depositAddress, depositChannelId } = depositInfo
         console.log('Deposit address: ', depositAddress);
         console.log('Deposit Channel Id: ', depositChannelId)
-        process.stdout.write(`Start sending coin: ${fAmount} \$${fromAsset.symbol} `)
+        process.stdout.write(`Start sending coin: ${fAmount} \$${this.#order.fromSymbol} `)
         await waitFor(10,true)
         process.stdout.write("\n")
-        const sendTxId = await this.#fromWallet.sendToAddress(fromAsset.symbol,depositAddress, amount)
+        const sendTxId = await this.#fromWallet.sendToAddress(this.#order.fromSymbol, depositAddress, amount)
         while (true) {
             // wait for 10 seconds
             await waitFor(10)
@@ -167,7 +169,7 @@ export class Trading {
         }
         process.stdout.write(`checking received tx: ${receiveTxId}`)
         while (true) {
-            let {confirmations} = await this.#fromWallet.transactionInfo(receiveTxId)
+            let {confirmations} = await this.#toWallet.transactionInfo(receiveTxId)
             confirmations = +confirmations
             process.stdout.write(` got ${confirmations} confirmations`)
             if (confirmations && confirmations >=6) {
@@ -181,7 +183,7 @@ export class Trading {
         const startAt = new Date();
         while (true) {
             process.stdout.write(`checking ${depositChannelId}: `)
-            const orderStatus = await this.swapSDK.getStatusV2({
+            const orderStatus = await this.#swapSDK.getStatusV2({
                 id: depositChannelId,
             });
             const {
@@ -203,10 +205,11 @@ export class Trading {
                     return null
                 }
                 await waitFor(10,true)
+                process.stdout.write("\n")
             }
         }
     }
-    assetConfig({symbol,chain}) {
+    assetConfig(symbol,chain) {
         for (let asset of this.#assets) {
             if (asset.symbol === symbol && asset.chain === chain) {
                 return asset

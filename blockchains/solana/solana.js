@@ -1,7 +1,14 @@
 import fs from "fs/promises";
 import { Connection, PublicKey, Keypair, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import {
+    TOKEN_PROGRAM_ID,
+    getAssociatedTokenAddress,
+    createTransferInstruction,
+    createAssociatedTokenAccountInstruction
+} from '@solana/spl-token'
 import {WalletInterface} from "../interface.js";
 export class Solana extends WalletInterface {
+    #isTest = false
     #mainToken = {
         symbol: "SOL",
         decimals: 9,
@@ -15,6 +22,8 @@ export class Solana extends WalletInterface {
         }
     }
     network = {}
+    /** @type {Keypair} */
+    #keypair =  null
     /** @type {Connection} */
     #connection = null;
     /**
@@ -24,11 +33,12 @@ export class Solana extends WalletInterface {
      */
     constructor(network,isTest, keypair) {
         super();
+        this.#isTest = isTest
         this.network = network
         if (!(keypair instanceof Keypair)) {
             throw new Error('keypair must be an instance of Keypair');
         }
-        this.keypair = keypair
+        this.#keypair = keypair
         let url = "https://api.devnet.solana.com"
         if (!isTest) {
             url = "https://api.mainnet-beta.solana.com"
@@ -43,7 +53,7 @@ export class Solana extends WalletInterface {
         return new Solana(network,isTest, keypair)
     }
     async getBalance() {
-        const balanceInLamports = await this.#connection.getBalance(this.keypair.publicKey);
+        const balanceInLamports = await this.#connection.getBalance(this.#keypair.publicKey);
         return balanceInLamports / LAMPORTS_PER_SOL;
     }
 
@@ -82,10 +92,82 @@ export class Solana extends WalletInterface {
         };
     }
 
-    async sendToAddress(symbol, address, amount, comment, commentTo) {
-        if (symbol.toUpperCase() === "SOL") {
-            return await this.sendSolToAddress(address, amount, comment, commentTo)
+    #getAsset(symbol) {
+        const asset = this.#contractToken[symbol]
+        if (!asset) {
+            throw new Error(`symbol ${symbol} is not supported`)
         }
+        const { decimals, mainnetContract, devnetContract} = asset
+        if (this.#isTest) {
+            return {decimals, contract: devnetContract}
+        }
+        return {decimals, contract: mainnetContract}
+    }
+
+    async sendFAmountToAddress(symbol, address, fAmount) {
+        if (symbol === "SOL") {
+            const amount = fAmount*LAMPORTS_PER_SOL
+            return await this.sendSolToAddress(address, amount)
+        }
+        const {decimals} = this.#getAsset(symbol)
+        return await this.sendToAddress(symbol, address, fAmount*(10**decimals))
+    }
+
+    async sendToAddress(symbol, address, amount) {
+        if (symbol.toUpperCase() === "SOL") {
+            return await this.sendSolToAddress(address, amount)
+        }
+        const {contract} = this.#getAsset(symbol)
+        // Source ATA (payer's contract account)
+        const sourceATA = await getAssociatedTokenAddress(
+            new PublicKey(contract),
+            this.#keypair.publicKey
+        );
+
+        // Destination ATA (recipient's contract account)
+        const destATA = await getAssociatedTokenAddress(
+            new PublicKey(contract),
+            new PublicKey(address)
+        );
+
+        // Check balances and ATAs
+        const sourceAccountInfo = await this.#connection.getAccountInfo(sourceATA);
+        if (!sourceAccountInfo) {
+            throw new Error('Source ATA does not exist or has no USDT. Fund it first.');
+        }
+
+        const destAccountInfo = await this.#connection.getAccountInfo(destATA);
+        const transaction = new Transaction();
+
+        // Create destination ATA if it doesn’t exist
+        if (!destAccountInfo) {
+            const createATAInstruction = createAssociatedTokenAccountInstruction(
+                this.#keypair.publicKey, // Payer (funds the account creation)
+                destATA,             // New ATA
+                new PublicKey(address), // Owner of the ATA
+                new PublicKey(contract),          // Token mint
+                TOKEN_PROGRAM_ID
+            );
+            transaction.add(createATAInstruction);
+        }
+
+        // Transfer instruction
+        const transferInstruction = createTransferInstruction(
+            sourceATA,           // Source ATA
+            destATA,            // Destination ATA
+            this.#keypair.publicKey, // Authority (payer owns source ATA)
+            amount,             // Amount in token units (e.g., 1 USDT = 1,000,000 with 6 decimals)
+            [],                 // No multi-signers
+            TOKEN_PROGRAM_ID
+        );
+
+        transaction.add(transferInstruction);
+
+        // Send transaction
+        const signature = await this.#connection.sendTransaction(transaction, [this.#keypair]);
+
+        await this.#connection.confirmTransaction(signature, 'confirmed');
+        return signature
     }
 
     async sendSolToAddress(address, amount, comment, commentTo) {
@@ -97,7 +179,7 @@ export class Solana extends WalletInterface {
         // Create a transaction
         const transaction = new Transaction().add(
             SystemProgram.transfer({
-                fromPubkey: this.keypair.publicKey, // Sender's public key
+                fromPubkey: this.#keypair.publicKey, // Sender's public key
                 toPubkey: recipientPublicKey,       // Recipient's public key
                 lamports: lamports,                 // Amount in lamports
             })
@@ -105,10 +187,10 @@ export class Solana extends WalletInterface {
         // Fetch recent blockhash (required for transaction validity)
         const { blockhash } = await this.#connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
-        transaction.feePayer = this.keypair.publicKey; // Sender pays the fee
+        transaction.feePayer = this.#keypair.publicKey; // Sender pays the fee
 
         // Sign the transaction with the sender's keypair
-        transaction.sign(this.keypair);
+        transaction.sign(this.#keypair);
         // Send the transaction
         const signature = await this.#connection.sendRawTransaction(transaction.serialize());
 
@@ -118,6 +200,6 @@ export class Solana extends WalletInterface {
     }
 
     async getAddress() {
-        return this.keypair.publicKey.toBase58()
+        return this.#keypair.publicKey.toBase58()
     }
 }

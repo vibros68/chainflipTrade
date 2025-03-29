@@ -22,6 +22,7 @@
   "homepage": "https://github.com/vibros68/chainflipTrade#readme",
   "dependencies": {
     "@chainflip/sdk": "^1.7.0",
+    "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "1",
     "@trpc/server": "^10.45.2",
     "axios": "^1.8.4",

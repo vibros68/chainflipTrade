@@ -1,8 +1,15 @@
 import {WalletInterface} from "../interface.js";
 import {ethers} from "ethers";
 import fs from "fs/promises";
+import {LAMPORTS_PER_SOL} from "@solana/web3.js";
+// Minimal ERC-20 ABI for USDT (only transfer and balanceOf)
+const ERC20_ABI = [
+    "function transfer(address to, uint256 value) public returns (bool)",
+    "function balanceOf(address account) public view returns (uint256)",
+];
 export class Geth extends WalletInterface {
     network = {}
+    #isTest = false
     #mainToken = {
         symbol: "ETH",
         decimals: 18,
@@ -37,6 +44,7 @@ export class Geth extends WalletInterface {
      */
     constructor(network,isTest, wallet) {
         super();
+        this.#isTest = isTest
         this.network = network
         let providerUrl = "https://eth-sepolia.g.alchemy.com/v2/WWQPK0icDlSTIPxj5sIa9_0lMlYdru6E"
         if (!isTest) {
@@ -45,7 +53,15 @@ export class Geth extends WalletInterface {
         this.#connect = new ethers.JsonRpcProvider(providerUrl);
         this.#wallet = wallet.connect(this.#connect)
     }
-    async sendToAddress(symbol, address, amount, comment, commentTo) {
+    async sendFAmountToAddress(symbol, address, fAmount) {
+        if (symbol === "ETH") {
+            const amount = fAmount*(10**18)
+            return await this.sendEthToAddress(address, amount)
+        }
+        const {decimals} = this.#getAsset(symbol)
+        return await this.sendToAddress(symbol, address, fAmount*(10**decimals))
+    }
+    async sendEthToAddress(address, amount) {
         if (!ethers.isAddress(address)) throw new Error('Invalid recipient address');
 
         const tx = await this.#wallet.sendTransaction({
@@ -54,6 +70,38 @@ export class Geth extends WalletInterface {
         });
 
         await tx.wait(); // Wait for 1 confirmation
+        return tx.hash;
+    }
+    #getAsset(symbol) {
+        const asset = this.#contractToken[symbol]
+        if (!asset) {
+            throw new Error(`symbol ${symbol} is not supported`)
+        }
+        const { decimals, mainnetContract, testnetContract} = asset
+        if (this.#isTest) {
+            return {decimals, contract: testnetContract}
+        }
+        return {decimals, contract: mainnetContract}
+    }
+    async sendToAddress(symbol, address, amount) {
+        if (!ethers.isAddress(address)) throw new Error('Invalid recipient address');
+        if (symbol === "ETH") {
+            return await this.sendEthToAddress(address, amount)
+        }
+        const {contract} = this.#getAsset(symbol)
+        // Connect to contract
+        const tokenContract = new ethers.Contract(contract, ERC20_ABI, this.#wallet);
+
+        // USDT uses 6 decimals (1 USDT = 1,000,000 units)
+        // const amountWei = ethers.parseUnits(amountInUSDT.toString(), 6);
+
+        // Send transaction
+        const tx = await tokenContract.transfer(address, amount);
+
+        // Wait for confirmation
+        await tx.wait();
+        //const receipt = await tx.wait();
+        //console.log(`USDT transfer confirmed in block ${receipt.blockNumber}`);
         return tx.hash;
     }
     async getBalance(label) {
