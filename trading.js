@@ -53,7 +53,67 @@ export class Trading {
                 await waitFor(4*60*60)
             }
         }
-
+    }
+    async goodAmountRange() {
+        this.#assets = await this.#swapSDK.getAssets();
+        const binanceRate = await this.#binance.getPrice({
+            from: this.#order.fromSymbol,
+            to: "USDT"
+        })
+        let maxPrice = 0
+        let rateMap = {
+            1: 0,
+            2: 0,
+            5: 0,
+            10: 0,
+            20: 0,
+            50: 0,
+            100: 0,
+            200: 0,
+            500: 0,
+            1000: 0,
+        }
+        let baseAmount = 100 / binanceRate
+        for (let multiple in rateMap) {
+            const price = await this.getQuotePrice(baseAmount*(+multiple))
+            if (price > maxPrice) {
+                maxPrice = price
+            }
+            rateMap[multiple] = price
+            //console.log(`price${multiple}00: ${price}`)
+        }
+        let minIndex = 0
+        let maxIndex = 0
+        const possibleMinAmount = maxPrice*(1-this.#order.maxDiffQuote)
+        for (let i in rateMap) {
+            if (rateMap[i] > possibleMinAmount) {
+                if(minIndex === 0 || minIndex > i) {
+                    minIndex = i
+                }
+                if(maxIndex === 0 || maxIndex < i) {
+                    maxIndex = i
+                }
+            }
+        }
+        return {min: minIndex*baseAmount, max: maxIndex*baseAmount}
+    }
+    async getQuotePrice(fAmount){
+        try {
+            let fromAsset = this.assetConfig(this.#order.fromSymbol, this.#fromWallet.network.chain)
+            let amount = Math.floor(fAmount*(10**fromAsset.decimals))
+            const quoteRequest = {
+                srcChain: this.#fromWallet.network.chain,
+                destChain: this.#toWallet.network.chain,
+                srcAsset: this.#order.fromSymbol,
+                destAsset: this.#order.toSymbol,
+                amount: amount.toString(),
+            };
+            const { quotes } = await this.#swapSDK.getQuoteV2(quoteRequest)
+            const quote = quotes.find((quote) => quote.type === 'REGULAR');
+            return quote.estimatedPrice
+        } catch (e) {
+            return 0
+        }
     }
     async supportedCoins() {
         const assets = await this.#swapSDK.getAssets();
@@ -102,6 +162,11 @@ export class Trading {
         let amount = Math.floor(fAmount*(10**fromAsset.decimals))
         fAmount = amount / (10**fromAsset.decimals)
         console.log(`making an order with amount: ${fAmount} \$${fromAsset.symbol}`)
+        const {min,max} = await this.goodAmountRange()
+        if (!(fAmount >= min && fAmount <= max)) {
+            console.log(`good range amount is: ${min} - ${max}, order amount is out of this range`)
+            return null
+        }
         const quoteRequest = {
             srcChain: fromAsset.chain,
             destChain: toAsset.chain,

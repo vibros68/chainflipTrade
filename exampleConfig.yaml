@@ -8,6 +8,7 @@ order:
   max: 10
   # maxDiffPrice is the max different rate between chainflip and binance rate. 0.1 = 10%
   maxDiffPrice: 0.1
+  maxDiffQuote: 0.01
 wallets:
   btc1:
     network:

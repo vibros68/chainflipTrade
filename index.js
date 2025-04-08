@@ -20,6 +20,14 @@ switch (command) {
     case "run":
         await t.run();
         break
+    case "check-price":
+        try {
+            const {min, max} = await t.goodAmountRange()
+            console.log(`min: ${min}, max: ${max}`)
+        } catch (e) {
+            console.log(`error: ${e.message}`)
+        }
+        break
     case "check":
         if (params.length === 0) {
             throw new Error('Please provide order id')
