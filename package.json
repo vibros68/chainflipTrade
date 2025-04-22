@@ -22,6 +22,10 @@
   "homepage": "https://github.com/vibros68/chainflipTrade#readme",
   "dependencies": {
     "@chainflip/sdk": "^1.7.0",
+    "@polkadot/api": "^15.9.2",
+    "@polkadot/keyring": "^13.4.4",
+    "@polkadot/util-crypto": "^13.4.4",
+    "@polkadot/wasm-crypto": "^7.4.1",
     "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "1",
     "@trpc/server": "^10.45.2",
