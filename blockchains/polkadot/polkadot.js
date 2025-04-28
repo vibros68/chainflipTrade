@@ -4,8 +4,27 @@ import { Keyring } from '@polkadot/keyring';
 import {WalletInterface} from "../interface.js";
 import fs from "fs/promises";
 import { cryptoWaitReady } from "@polkadot/util-crypto"
+import axios from "axios";
+import {waitFor} from "../../helper/helper.js";
+
+const filterConsoleLog = () => {
+    const originalLog = console.warn;
+    console.warn = (...args) => {
+        const message = args.join(' ');
+        if (message.includes('API/INIT: RPC methods not decorated')) {
+            return; // Bỏ qua cảnh báo
+        }
+        originalLog.apply(console, args);
+    };
+    return () => {
+        console.warn = originalLog; // Khôi phục console.log
+    };
+};
 
 export class Polkadot extends WalletInterface {
+    #subscanKey = "4c3ad19bbc364e7794acca638857ab62"
+    #subscanUrl = ""
+    #decimals = 0
     #isTest = false
     #url = "wss://rpc.polkadot.io"
     network = {}
@@ -23,10 +42,11 @@ export class Polkadot extends WalletInterface {
         this.network = network
         this.#isTest = isTest
         this.#keypair = keypair
+        this.#subscanUrl = isTest ? 'https://westend.api.subscan.io' : 'https://polkadot.api.subscan.io';
+        this.#decimals = isTest ? 12 : 10;
         if (isTest) {
             this.#url = "wss://westend-rpc.polkadot.io"
         }
-        this.keyring = new Keyring({ type: 'sr25519' }); // Polkadot dùng sr25519
         this.#api = null;
     }
 
@@ -41,9 +61,14 @@ export class Polkadot extends WalletInterface {
     // connect to Polkadot node
     async connect() {
         if (!this.#api) {
-            const provider = new WsProvider(this.#url);
-            this.#api = await ApiPromise.create({ provider });
-            await this.#api.isReady;
+            const restoreLog = filterConsoleLog();
+            try {
+                const provider = new WsProvider(this.#url);
+                this.#api = await ApiPromise.create({ provider });
+                await this.#api.isReady;
+            } finally {
+                restoreLog();
+            }
         }
     }
 
@@ -76,12 +101,9 @@ export class Polkadot extends WalletInterface {
     }
 
     // Gửi DOT đến một địa chỉ
-    async sendToAddress(recipientAddress, amountInDOT) {
+    async sendFAmountToAddress(symbol,recipientAddress, amountInDOT) {
         try {
             await this.connect();
-            if (!this.seed) {
-                throw new Error('Seed phrase is not provided');
-            }
             if (!recipientAddress || typeof recipientAddress !== 'string' || recipientAddress.length !== 48) {
                 throw new Error('address is not valid');
             }
@@ -89,69 +111,107 @@ export class Polkadot extends WalletInterface {
                 throw new Error('amount must be greater than 0');
             }
 
-            const sender = this.keyring.addFromUri(this.seed);
             const decimals = this.#api.registry.chainDecimals[0];
             const amountPlanck = BigInt(Math.floor(amountInDOT * 10**decimals));
 
             const transfer = this.#api.tx.balances.transferKeepAlive(recipientAddress, amountPlanck);
-            const hash = await transfer.signAndSend(sender, ({ status }) => {
-                if (status.isInBlock) {
-                    console.log(`Giao dịch được thêm vào khối: ${status.asInBlock}`);
-                }
-                if (status.isFinalized) {
-                    console.log(`Giao dịch hoàn tất: ${hash.toHex()}`);
-                }
+            let txHash;
+            await new Promise((resolve, reject) => {
+                transfer.signAndSend(this.#keypair, ({ status, events, dispatchError }) => {
+                    if (status.isFinalized) {
+                        txHash = transfer.hash.toHex();
+                        if (dispatchError) {
+                            let errorMessage = 'invalid transaction';
+                            if (dispatchError.isModule) {
+                                const decoded = this.api.registry.findMetaError(dispatchError.asModule);
+                                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                            }
+                            reject(new Error(`Giao dịch thất bại: ${errorMessage}`));
+                        } else {
+                            resolve();
+                        }
+                    }
+                }).catch(reject);
             });
 
             await this.disconnect();
-            return hash.toHex();
+            return txHash;
         } catch (error) {
             await this.disconnect();
             throw error;
         }
     }
 
-    async transactionInfo(txHash) {
+    async transactionInfo(txHash, num) {
         try {
+            if (!txHash || typeof txHash !== 'string' || !txHash.startsWith('0x') || txHash.length !== 66) {
+                throw new Error('Hash giao dịch không hợp lệ. Phải là chuỗi hex 32 byte bắt đầu bằng 0x.');
+            }
             await this.connect();
-            if (!txHash || typeof txHash !== 'string') {
-                throw new Error('Hash giao dịch không hợp lệ');
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'PolkadotWallet/1.0'
+            };
+            if (this.#subscanKey) {
+                headers['X-API-Key'] = this.#subscanKey;
             }
 
-            // block information
-            const signedBlock = await this.#api.rpc.chain.getBlock();
-            const allRecords = await this.#api.query.system.events.at(signedBlock.block.header.hash);
+            const response = await axios.post(`${this.#subscanUrl}/api/scan/extrinsic`, {
+                hash: txHash
+            }, { headers });
 
-            let txInfo = null;
-            allRecords.forEach(({ event, phase }) => {
-                if (phase.isApplyExtrinsic && event.section === 'balances' && event.method === 'Transfer') {
-                    const { from, to, amount } = event.data;
-                    const eventHash = phase.asApplyExtrinsic.toString();
-                    if (eventHash === txHash || txHash.includes(eventHash)) {
-                        txInfo = {
-                            hash: txHash,
-                            from: from.toString(),
-                            to: to.toString(),
-                            amount: Number(amount) / 10**this.#api.registry.chainDecimals[0],
-                            unit: 'DOT',
-                            blockHash: signedBlock.block.header.hash.toHex(),
-                            status: 'Success' // Giả định thành công nếu tìm thấy
-                        };
-                    }
-                }
-            });
-
-            if (!txInfo) {
-                // Kiểm tra trạng thái giao dịch qua RPC nếu không tìm thấy trong khối
-                const tx = await this.#api.rpc.payment.queryInfo(txHash);
-                txInfo = {
-                    hash: txHash,
-                    status: tx.class.toString() === 'Normal' ? 'Pending' : 'Unknown',
-                    fee: tx.partialFee ? Number(tx.partialFee) / 10**this.#api.registry.chainDecimals[0] : 0
+            if (response.data.code !== 0 || !response.data.data) {
+                return {
+                    txId: txHash,
+                    status: 'NotFound',
+                    error: response.data.message || 'tx not found.',
+                    blockHash: null,
+                    blockHeight: null,
+                    timestamp: null,
+                    confirmations: 0,
                 };
             }
 
-            await this.disconnect();
+            const { data } = response.data;
+            if (data.transfer === null) {
+                if (num > 5) {
+                    return {
+                        txId: txHash,
+                        status: 'NotFound',
+                        error: response.data.message || 'tx not found.',
+                        blockHash: null,
+                        blockHeight: null,
+                        timestamp: null,
+                        confirmations: 0,
+                    };
+                }
+                if (!Number.isInteger(num)) {
+                    num = 0
+                }
+                await waitFor(5)
+                return this.transactionInfo(txHash, num+1)
+            }
+
+            const header = await this.#api.rpc.chain.getHeader();
+            const currentBlockNumber = header.number.toNumber();
+
+            const confirmations = data.block_num ? Math.max(0, currentBlockNumber - data.block_num + 1) : 0;
+
+            const txInfo = {
+                txId: txHash,
+                from: data.transfer.from,
+                to: data.transfer.to,
+                amount: +data.transfer.amount,
+                unit: data.transfer.asset_symbol,
+                blockHash: data.block_hash || null,
+                blockHeight: data.block_num || null,
+                timestamp: data.block_timestamp ? new Date(data.block_timestamp * 1000).toISOString() : null,
+                fee: data.fee ? Number(data.fee) / 10**this.#decimals : 0,
+                status: data.success ? 'Success' : 'Failed',
+                confirmations,
+            };
+
             return txInfo;
         } catch (error) {
             await this.disconnect();
